@@ -411,6 +411,44 @@ export const TextIcon = createIcon(
   tablerIconProps,
 );
 
+// tabler-icons: bold, italic, underline, strikethrough
+export const TextBoldIcon = createIcon(
+  <g strokeWidth="1.5">
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M7 5h6a3.5 3.5 0 0 1 0 7h-6z" />
+    <path d="M13 12h1a3.5 3.5 0 0 1 0 7h-7v-7" />
+  </g>,
+  tablerIconProps,
+);
+
+export const TextItalicIcon = createIcon(
+  <g strokeWidth="1.5">
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M11 5l6 0" />
+    <path d="M7 19l6 0" />
+    <path d="M14 5l-4 14" />
+  </g>,
+  tablerIconProps,
+);
+
+export const TextUnderlineIcon = createIcon(
+  <g strokeWidth="1.5">
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M7 5v5a5 5 0 0 0 10 0v-5" />
+    <path d="M5 19h14" />
+  </g>,
+  tablerIconProps,
+);
+
+export const TextStrikethroughIcon = createIcon(
+  <g strokeWidth="1.5">
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M5 12l14 0" />
+    <path d="M16 6.5a4 2 0 0 0 -4 -1.5h-1a3.5 3.5 0 0 0 0 7h2a3.5 3.5 0 0 1 0 7h-1.5a4 2 0 0 1 -4 -1.5" />
+  </g>,
+  tablerIconProps,
+);
+
 export const TextSizeIcon = createIcon(
   <g stroke="currentColor" strokeWidth="1.5">
     <path stroke="none" d="M0 0h24v24H0z" fill="none" />

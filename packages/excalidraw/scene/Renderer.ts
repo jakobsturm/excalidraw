@@ -4,6 +4,7 @@ import {
   getContainerElement,
   isElementInViewport,
   isTextElement,
+  hasTextStyles,
 } from "@excalidraw/element";
 
 import { arrayToMap, memoize, toBrandedType } from "@excalidraw/common";
@@ -257,11 +258,14 @@ export class Renderer {
       }
 
       // we don't want to render text element that's being currently edited
-      // (it's rendered on remote only)
+      // (it's rendered on remote only), unless it has inline styles, which
+      // the editor can't show (it's drawn under the editor then, see
+      // textWysiwyg)
       if (
         !editingTextElement ||
         editingTextElement.type !== "text" ||
-        element.id !== editingTextElement.id
+        element.id !== editingTextElement.id ||
+        (isTextElement(element) && hasTextStyles(element))
       ) {
         elementsMap.set(element.id, element);
       }

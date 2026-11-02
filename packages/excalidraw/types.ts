@@ -1246,6 +1246,7 @@ export type AppClassProperties = {
   drawShape: App["drawShape"];
   arrowText: App["arrowText"];
   textTool: App["textTool"];
+  text: App["text"];
   cursor: App["cursor"];
   bucketFill: App["bucketFill"];
   duplicate: App["duplicate"];

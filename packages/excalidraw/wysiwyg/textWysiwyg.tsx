@@ -48,12 +48,15 @@ import {
   isTextElement,
 } from "@excalidraw/element";
 
+import { hasTextStyles } from "@excalidraw/element";
+
 import type {
   ExcalidrawLinearElement,
   ExcalidrawTextElementWithContainer,
   ExcalidrawTextElement,
   NonDeleted,
   ExcalidrawTextContainer,
+  TextStyleAttributes,
 } from "@excalidraw/element/types";
 
 import { actionSaveFileToDisk, actionSaveToActiveFile } from "../actions";
@@ -67,11 +70,17 @@ import {
   actionDecreaseFontSize,
   actionIncreaseFontSize,
 } from "../actions/actionProperties";
+import { TEXT_STYLE_SHORTCUT_ACTIONS } from "../actions/actionTextStyles";
+
 import {
   actionResetZoom,
   actionZoomIn,
   actionZoomOut,
 } from "../actions/actionCanvas";
+
+import { getPendingTextStyle } from "./textEditorStyles";
+
+import type { ActiveTextEditor } from "./textEditorStyles";
 
 import type { ParsedDataTranferList } from "../clipboard";
 
@@ -247,6 +256,14 @@ const getLineCaretXFromNativeLayout = ({
 
 type SubmitHandler = () => void;
 
+/** how the text changed, to carry its inline styles over (see textStyles.ts) */
+export type TextEditorEdit = {
+  /** the editor's selection before the change */
+  selection: { start: number; end: number } | null;
+  /** the style of the inserted text, if not the one before it */
+  insertStyle?: TextStyleAttributes | null;
+};
+
 export const textWysiwyg = ({
   onChange,
   onSubmit,
@@ -265,7 +282,7 @@ export const textWysiwyg = ({
    * Note: `text`, which can be wrapped and therefore different from `originalText`,
    *       is derived from `originalText`
    */
-  onChange?: (nextOriginalText: string) => void;
+  onChange?: (nextOriginalText: string, edit: TextEditorEdit) => void;
   onSubmit: (data: { viaKeyboard: boolean; nextOriginalText: string }) => void;
   getViewportCoords: (x: number, y: number) => [number, number];
   element: ExcalidrawTextElement;
@@ -500,7 +517,15 @@ export const textWysiwyg = ({
         ),
         textAlign,
         verticalAlign,
-        color: applyDarkModeFilter(
+        // a text with inline styles is drawn on the canvas, under the editor
+        // (see Renderer), which keeps only the caret and the selection
+        color: hasTextStyles(updatedTextElement)
+          ? "transparent"
+          : applyDarkModeFilter(
+              updatedTextElement.strokeColor,
+              appState.theme === THEME.DARK,
+            ),
+        caretColor: applyDarkModeFilter(
           updatedTextElement.strokeColor,
           appState.theme === THEME.DARK,
         ),
@@ -567,6 +592,25 @@ export const textWysiwyg = ({
     boxSizing: "content-box",
   });
   editable.value = element.originalText;
+
+  // the selection the next edit replaces (see TextEditorEdit)
+  let selectionBeforeEdit: { start: number; end: number } | null = null;
+  const rememberSelection = () => {
+    selectionBeforeEdit = {
+      start: editable.selectionStart,
+      end: editable.selectionEnd,
+    };
+  };
+  const activeTextEditor: ActiveTextEditor = {
+    elementId: element.id,
+    getSelection: () => ({
+      start: Math.min(editable.selectionStart, editable.selectionEnd),
+      end: Math.max(editable.selectionStart, editable.selectionEnd),
+    }),
+    pendingStyle: null,
+  };
+  app.text.activeTextEditor = activeTextEditor;
+
   updateWysiwygStyle();
 
   const getCaretIndexFromInitialSceneCoords = () => {
@@ -781,6 +825,7 @@ export const textWysiwyg = ({
             const text = getTextFromElements(parsed.elements);
             if (text) {
               const { selectionStart, selectionEnd, value } = editable;
+              rememberSelection();
 
               editable.value =
                 value.slice(0, selectionStart) +
@@ -850,7 +895,14 @@ export const textWysiwyg = ({
       }
     };
 
+    editable.addEventListener("beforeinput", rememberSelection);
+
     editable.oninput = () => {
+      const selection = selectionBeforeEdit;
+      selectionBeforeEdit = null;
+      const pendingStyle =
+        selection && getPendingTextStyle(activeTextEditor, selection.start);
+      activeTextEditor.pendingStyle = null;
       const normalized = normalizeText(editable.value);
       if (editable.value !== normalized) {
         const selectionStart = editable.selectionStart;
@@ -860,7 +912,10 @@ export const textWysiwyg = ({
         editable.selectionStart = selectionStart;
         editable.selectionEnd = selectionStart;
       }
-      onChange(editable.value);
+      onChange(editable.value, {
+        selection,
+        ...(pendingStyle && { insertStyle: pendingStyle.style }),
+      });
       // once the update, and any scroll it made (see
       // AppText.handleTextWysiwyg), is in the app's state
       queueMicrotask(followCaretFromUnderPanels);
@@ -868,6 +923,14 @@ export const textWysiwyg = ({
   }
 
   editable.onkeydown = (event) => {
+    const textStyleShortcut = TEXT_STYLE_SHORTCUT_ACTIONS.find((action) =>
+      action.keyTest?.(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+        app,
+      ),
+    );
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();
       app.actionManager.executeAction(actionZoomIn);
@@ -880,6 +943,9 @@ export const textWysiwyg = ({
       event.preventDefault();
       app.actionManager.executeAction(actionResetZoom);
       updateWysiwygStyle();
+    } else if (textStyleShortcut) {
+      event.preventDefault();
+      app.actionManager.executeAction(textStyleShortcut, "keyboard");
     } else if (actionDecreaseFontSize.keyTest(event)) {
       app.actionManager.executeAction(actionDecreaseFontSize);
     } else if (actionIncreaseFontSize.keyTest(event)) {
@@ -912,7 +978,9 @@ export const textWysiwyg = ({
       event.preventDefault();
       if (event.isComposing) {
         return;
-      } else if (event.shiftKey || event.code === CODES.BRACKET_LEFT) {
+      }
+      rememberSelection();
+      if (event.shiftKey || event.code === CODES.BRACKET_LEFT) {
         outdent();
       } else {
         indent();
@@ -1093,6 +1161,10 @@ export const textWysiwyg = ({
     editable.onblur = null;
     editable.oninput = null;
     editable.onkeydown = null;
+    editable.removeEventListener("beforeinput", rememberSelection);
+    if (app.text.activeTextEditor === activeTextEditor) {
+      app.text.activeTextEditor = null;
+    }
 
     if (observer) {
       observer.disconnect();

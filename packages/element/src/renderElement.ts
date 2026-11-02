@@ -60,6 +60,12 @@ import {
 } from "./textElement";
 import { getLineHeightInPx } from "./textMeasurements";
 import {
+  getRenderedLineOffsets,
+  getStyledTextSegments,
+  getTextDecorations,
+  TEXT_STYLE_METRICS,
+} from "./textStyles";
+import {
   isTextElement,
   isLinearElement,
   isFreeDrawElement,
@@ -81,6 +87,7 @@ import {
 } from "./stickyNote";
 
 import type { RenderEnvironment } from "./renderEnvironment";
+import type { StyledTextSegment } from "./textStyles";
 
 import type {
   ExcalidrawElement,
@@ -457,6 +464,71 @@ export const withSavedContext = (
   }
 };
 
+/**
+ * Draws a line of text made of differently styled runs, each where it'd be
+ * in the plain line (the styles keep the glyphs' advances, see
+ * TEXT_STYLE_METRICS). Expects the context set up for the plain line.
+ */
+const drawStyledTextLine = (
+  context: CanvasRenderingContext2D,
+  element: ExcalidrawTextElement,
+  line: string,
+  segments: readonly StyledTextSegment[],
+  alignX: number,
+  baselineY: number,
+  isDarkTheme: boolean,
+) => {
+  const lineWidth = context.measureText(line).width;
+  const lineStartX =
+    element.textAlign === "center"
+      ? alignX - lineWidth / 2
+      : element.textAlign === "right"
+      ? alignX - lineWidth
+      : alignX;
+  const plainFill = context.fillStyle;
+
+  withSavedContext(context, () => {
+    context.textAlign = "left";
+    for (const segment of segments) {
+      const { style, text } = segment;
+      const x =
+        lineStartX + context.measureText(line.slice(0, segment.offset)).width;
+      const color = style?.strokeColor
+        ? applyDarkModeFilter(style.strokeColor, isDarkTheme)
+        : plainFill;
+      context.fillStyle = color;
+      context.strokeStyle = color;
+
+      withSavedContext(context, () => {
+        context.translate(x, baselineY);
+        if (style?.italic) {
+          context.transform(1, 0, -TEXT_STYLE_METRICS.italicSkew, 1, 0, 0);
+        }
+        context.fillText(text, 0, 0);
+        if (style?.bold) {
+          context.lineWidth =
+            element.fontSize * TEXT_STYLE_METRICS.boldStrokeWidth;
+          context.lineJoin = "round";
+          context.strokeText(text, 0, 0);
+        }
+      });
+
+      const decorations = getTextDecorations(style, element.fontSize);
+      if (decorations.length) {
+        const width = context.measureText(text).width;
+        for (const decoration of decorations) {
+          context.fillRect(
+            x,
+            baselineY + decoration.y - decoration.thickness / 2,
+            width,
+            decoration.thickness,
+          );
+        }
+      }
+    }
+  });
+};
+
 const drawElementOnCanvas = (
   element: NonDeletedExcalidrawElement,
   rc: RoughCanvas,
@@ -703,12 +775,36 @@ const drawElementOnCanvas = (
             lineHeightPx,
           );
 
+          // the browser lays out an RTL line itself, so styled runs can't be
+          // placed in it
+          const lineOffsets =
+            element.textStyles?.length && !rtl
+              ? getRenderedLineOffsets(lines, element.originalText)
+              : null;
+
           for (let index = 0; index < lines.length; index++) {
-            context.fillText(
-              lines[index],
-              horizontalOffset,
-              index * lineHeightPx + verticalOffset,
-            );
+            const y = index * lineHeightPx + verticalOffset;
+            const segments =
+              lineOffsets && lineOffsets[index] !== -1
+                ? getStyledTextSegments(
+                    lines[index],
+                    lineOffsets[index],
+                    element.textStyles,
+                  )
+                : null;
+            if (segments && (segments.length > 1 || segments[0].style)) {
+              drawStyledTextLine(
+                context,
+                element,
+                lines[index],
+                segments,
+                horizontalOffset,
+                y,
+                renderConfig.theme === THEME.DARK,
+              );
+            } else {
+              context.fillText(lines[index], horizontalOffset, y);
+            }
           }
         });
         if (shouldTemporarilyAttach) {

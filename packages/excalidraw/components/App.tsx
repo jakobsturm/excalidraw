@@ -5607,7 +5607,8 @@ class App extends React.Component<AppProps, AppState> {
       const isPickingStroke =
         lowerCased === KEYS.S && event.shiftKey && !event[KEYS.CTRL_OR_CMD];
       const isPickingBackground =
-        event.key === KEYS.I || (lowerCased === KEYS.G && event.shiftKey);
+        (event.key === KEYS.I && !event[KEYS.CTRL_OR_CMD]) ||
+        (lowerCased === KEYS.G && event.shiftKey);
 
       if (isPickingStroke || isPickingBackground) {
         this.openEyeDropper({

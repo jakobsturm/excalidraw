@@ -24,6 +24,14 @@ export {
 } from "./actionProperties";
 
 export {
+  actionToggleTextStyle,
+  actionToggleTextBold,
+  actionToggleTextItalic,
+  actionToggleTextUnderline,
+  actionToggleTextStrikethrough,
+} from "./actionTextStyles";
+
+export {
   actionChangeViewBackgroundColor,
   actionClearCanvas,
   actionZoomIn,

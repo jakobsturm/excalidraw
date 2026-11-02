@@ -1,4 +1,4 @@
-import { flushSync } from "react-dom";
+import { flushSync, unstable_batchedUpdates } from "react-dom";
 
 import {
   DEFAULT_VERTICAL_ALIGN,
@@ -15,6 +15,7 @@ import {
 import { pointFrom, type Radians } from "@excalidraw/math";
 
 import {
+  getTextStylesAfterEdit,
   DEFAULT_BOUND_TEXT_LABEL_POSITION,
   fixBindingsAfterDeletion,
   getActiveTextElement,
@@ -59,6 +60,8 @@ import { scrollBoundsIntoView } from "../viewport";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 
 import type App from "./App";
+import type { ActiveTextEditor } from "../wysiwyg/textEditorStyles";
+import type { TextEditorEdit } from "../wysiwyg/textWysiwyg";
 import type { AppState, Offsets, ViewportUIName } from "../types";
 
 type AppTextDependencies = {
@@ -84,6 +87,8 @@ export class AppText {
   constructor(private app: App, private dependencies: AppTextDependencies) {}
 
   public textWysiwygSubmitHandler: ReturnType<typeof textWysiwyg> | null = null;
+  /** the text editor's state the text style actions use, while editing */
+  public activeTextEditor: ActiveTextEditor | null = null;
   private getTextCreationGridPoint = (x: number, y: number) => {
     const effectiveGridSize = this.app.getEffectiveGridSize();
 
@@ -184,7 +189,11 @@ export class AppText {
   ) {
     const elementsMap = this.app.scene.getElementsMapIncludingDeleted();
 
-    const updateElement = (nextOriginalText: string, isDeleted: boolean) => {
+    const updateElement = (
+      nextOriginalText: string,
+      isDeleted: boolean,
+      edit?: TextEditorEdit,
+    ) => {
       const latestTextElement =
         this.app.scene.getElement<ExcalidrawTextElement>(element.id);
 
@@ -222,6 +231,12 @@ export class AppText {
           if (_element.id === latestTextElement.id && isTextElement(_element)) {
             return newElementWith(_element, {
               originalText: nextOriginalText,
+              textStyles: getTextStylesAfterEdit(
+                _element.textStyles,
+                _element.originalText,
+                nextOriginalText,
+                edit,
+              ),
               isDeleted: isDeleted ?? _element.isDeleted,
               ...(stickyLayout?.text ??
                 // returns (wrapped) text and new dimensions
@@ -293,14 +308,15 @@ export class AppText {
           viewportY - this.app.state.offsetTop,
         ];
       },
-      onChange: withBatchedUpdates((nextOriginalText) => {
-        updateElement(nextOriginalText, false);
-        if (isNonDeletedElement(element)) {
-          updateBoundElements(element, this.app.scene, {
-            renderEnvironment: this.app.renderEnvironment,
-          });
-        }
-      }),
+      onChange: (nextOriginalText, edit) =>
+        unstable_batchedUpdates(() => {
+          updateElement(nextOriginalText, false, edit);
+          if (isNonDeletedElement(element)) {
+            updateBoundElements(element, this.app.scene, {
+              renderEnvironment: this.app.renderEnvironment,
+            });
+          }
+        }),
       onSubmit: withBatchedUpdates(({ viaKeyboard, nextOriginalText }) => {
         this.textWysiwygSubmitHandler = null;
 

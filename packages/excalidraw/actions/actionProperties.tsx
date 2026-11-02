@@ -42,7 +42,7 @@ import {
 
 import { LinearElementEditor } from "@excalidraw/element";
 
-import { newElementWith } from "@excalidraw/element";
+import { applyTextStyle, newElementWith } from "@excalidraw/element";
 import { getArrowheadForPicker } from "@excalidraw/element";
 
 import {
@@ -369,12 +369,47 @@ export const actionChangeStrokeColor = register<
   name: "changeStrokeColor",
   label: "labels.stroke",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     const { color, ...appStateUpdates } = value ?? {};
     if (color === undefined) {
       return {
         appState: { ...appState, ...appStateUpdates },
         captureUpdate: CaptureUpdateAction.EVENTUALLY,
+      };
+    }
+    // part of the text being edited is selected: color only that part (all
+    // of it colors the text, as with no selection)
+    const editor = app.text.activeTextEditor;
+    const editedText =
+      editor && appState.editingTextElement?.id === editor.elementId
+        ? app.scene.getElement(editor.elementId)
+        : null;
+    const editorSelection = editor?.getSelection();
+    if (
+      editor &&
+      editorSelection &&
+      editedText &&
+      isTextElement(editedText) &&
+      editorSelection.start !== editorSelection.end &&
+      editorSelection.end - editorSelection.start <
+        editedText.originalText.length
+    ) {
+      return {
+        elements: elements.map((el) =>
+          el.id === editor.elementId && isTextElement(el)
+            ? newElementWith(el, {
+                textStyles: applyTextStyle(
+                  el.textStyles,
+                  el.originalText.length,
+                  editorSelection.start,
+                  editorSelection.end,
+                  { strokeColor: color === el.strokeColor ? null : color },
+                ),
+              })
+            : el,
+        ),
+        appState: { ...appState, ...appStateUpdates },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       };
     }
     // resolved from the state the action runs against — never from the
@@ -391,10 +426,20 @@ export const actionChangeStrokeColor = register<
           appState,
           (el) =>
             hasStrokeColor(el.type)
-              ? newElementWith(
-                  el,
-                  getColorUpdate(el, "strokeColor", color, elementsMap),
-                )
+              ? newElementWith(el, {
+                  ...getColorUpdate(el, "strokeColor", color, elementsMap),
+                  // the whole text takes the color, parts colored before too
+                  ...(isTextElement(el) &&
+                    el.textStyles?.length && {
+                      textStyles: applyTextStyle(
+                        el.textStyles,
+                        el.originalText.length,
+                        0,
+                        el.originalText.length,
+                        { strokeColor: null },
+                      ),
+                    }),
+                })
               : el,
           true,
         ),

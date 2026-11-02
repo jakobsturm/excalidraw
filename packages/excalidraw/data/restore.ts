@@ -78,7 +78,10 @@ import {
   syncMovedIndices,
 } from "@excalidraw/element";
 
-import { refreshTextDimensions } from "@excalidraw/element";
+import {
+  normalizeTextStyles,
+  refreshTextDimensions,
+} from "@excalidraw/element";
 
 import { getNormalizedDimensions } from "@excalidraw/element";
 
@@ -592,6 +595,10 @@ export const restoreElement = (
         baseFontSize: isFiniteNumber(element.baseFontSize)
           ? normalizeStickyNoteFontSize(element.baseFontSize)
           : null,
+        textStyles: normalizeTextStyles(
+          element.textStyles,
+          (element.originalText || text).length,
+        ),
       });
 
       // if empty text, mark as deleted. We keep in array

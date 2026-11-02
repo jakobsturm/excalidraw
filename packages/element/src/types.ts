@@ -288,7 +288,28 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
      * so it survives midpoint insertion and other geometry changes.
      * */
     labelPosition?: number | null;
+    /**
+     * Inline styles of ranges of `originalText` (see `textStyles.ts`).
+     * `null` (or missing) when the whole text is plain.
+     */
+    textStyles?: readonly TextStyleRange[] | null;
   }>;
+
+export type TextStyleAttributes = Readonly<{
+  bold?: true;
+  italic?: true;
+  underline?: true;
+  strikethrough?: true;
+  /** overrides the element's `strokeColor` */
+  strokeColor?: string;
+}>;
+
+/** end-exclusive code-unit offsets into `originalText` */
+export type TextStyleRange = Readonly<{
+  start: number;
+  end: number;
+}> &
+  TextStyleAttributes;
 
 export type ExcalidrawBindableElement =
   | ExcalidrawRectangleElement

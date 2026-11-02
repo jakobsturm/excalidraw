@@ -15,6 +15,7 @@ import {
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
   STICKY_NOTE_FOOTER,
   STICKY_NOTE_SHADOW_OPACITY,
+  getFontString,
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import { hashString } from "@excalidraw/element";
@@ -25,7 +26,13 @@ import {
 } from "@excalidraw/element";
 import { LinearElementEditor } from "@excalidraw/element";
 import { getBoundTextElement, getContainerElement } from "@excalidraw/element";
-import { getLineHeightInPx } from "@excalidraw/element";
+import { getLineHeightInPx, getLineWidth } from "@excalidraw/element";
+import {
+  getRenderedLineOffsets,
+  getStyledTextSegments,
+  getTextDecorations,
+  TEXT_STYLE_METRICS,
+} from "@excalidraw/element";
 import {
   isArrowElement,
   isIframeLikeElement,
@@ -48,9 +55,11 @@ import { getElementAbsoluteCoords } from "@excalidraw/element";
 
 import type {
   ExcalidrawElement,
+  ExcalidrawTextElement,
   ExcalidrawTextElementWithContainer,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
+import type { StyledTextSegment } from "@excalidraw/element";
 
 import type { RenderableElementsMap, SVGRenderConfig } from "../scene/types";
 import type { AppState, BinaryFiles } from "../types";
@@ -812,7 +821,31 @@ const renderElementToSvg = (
             : element.textAlign === "right" || direction === "rtl"
             ? "end"
             : "start";
+        const lineOffsets =
+          element.textStyles?.length && direction === "ltr"
+            ? getRenderedLineOffsets(lines, element.originalText)
+            : null;
         for (let i = 0; i < lines.length; i++) {
+          const segments =
+            lineOffsets && lineOffsets[i] !== -1
+              ? getStyledTextSegments(
+                  lines[i],
+                  lineOffsets[i],
+                  element.textStyles,
+                )
+              : null;
+          if (segments && (segments.length > 1 || segments[0].style)) {
+            renderStyledSvgTextLine(
+              node,
+              element,
+              lines[i],
+              segments,
+              horizontalOffset,
+              i * lineHeightPx + verticalOffset,
+              renderConfig,
+            );
+            continue;
+          }
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
           text.textContent = lines[i];
           text.setAttribute("x", `${horizontalOffset}`);
@@ -846,6 +879,79 @@ const renderElementToSvg = (
         // @ts-ignore
         throw new Error(`Unimplemented type ${element.type}`);
       }
+    }
+  }
+};
+
+const ITALIC_SKEW_DEGREES =
+  (Math.atan(-TEXT_STYLE_METRICS.italicSkew) * 180) / Math.PI;
+
+/** an SVG counterpart of `drawStyledTextLine` (see renderElement.ts) */
+const renderStyledSvgTextLine = (
+  node: SVGElement,
+  element: ExcalidrawTextElement,
+  line: string,
+  segments: readonly StyledTextSegment[],
+  alignX: number,
+  baselineY: number,
+  renderConfig: SVGRenderConfig,
+) => {
+  const doc = node.ownerDocument;
+  const font = getFontString(element);
+  const env = renderConfig.renderEnvironment;
+  const lineWidth = getLineWidth(line, font, env);
+  const lineStartX =
+    element.textAlign === "center"
+      ? alignX - lineWidth / 2
+      : element.textAlign === "right"
+      ? alignX - lineWidth
+      : alignX;
+  const isDarkTheme = renderConfig.theme === THEME.DARK;
+
+  for (const segment of segments) {
+    const { style } = segment;
+    const x =
+      lineStartX + getLineWidth(line.slice(0, segment.offset), font, env);
+    const color = applyDarkModeFilter(
+      style?.strokeColor ?? element.strokeColor,
+      isDarkTheme,
+    );
+    const text = doc.createElementNS(SVG_NS, "text");
+    text.textContent = segment.text;
+    text.setAttribute(
+      "transform",
+      `translate(${x} ${baselineY})${
+        style?.italic ? ` skewX(${ITALIC_SKEW_DEGREES})` : ""
+      }`,
+    );
+    text.setAttribute("font-family", getFontFamilyString(element));
+    text.setAttribute("font-size", `${element.fontSize}px`);
+    text.setAttribute("fill", color);
+    if (style?.bold) {
+      text.setAttribute("stroke", color);
+      text.setAttribute(
+        "stroke-width",
+        `${element.fontSize * TEXT_STYLE_METRICS.boldStrokeWidth}`,
+      );
+      text.setAttribute("stroke-linejoin", "round");
+    }
+    text.setAttribute("text-anchor", "start");
+    text.setAttribute("style", "white-space: pre;");
+    text.setAttribute("direction", "ltr");
+    text.setAttribute("dominant-baseline", "alphabetic");
+    node.appendChild(text);
+
+    for (const decoration of getTextDecorations(style, element.fontSize)) {
+      const rect = doc.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("x", `${x}`);
+      rect.setAttribute(
+        "y",
+        `${baselineY + decoration.y - decoration.thickness / 2}`,
+      );
+      rect.setAttribute("width", `${getLineWidth(segment.text, font, env)}`);
+      rect.setAttribute("height", `${decoration.thickness}`);
+      rect.setAttribute("fill", color);
+      node.appendChild(rect);
     }
   }
 };
