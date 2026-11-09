@@ -40,7 +40,7 @@ import {
   isTextElement,
 } from "@excalidraw/element";
 
-import { getContainingFrame } from "@excalidraw/element";
+import { getContainingFrame, isFrameClippable } from "@excalidraw/element";
 
 import { getCornerRadius, isPathALoop } from "@excalidraw/element";
 
@@ -89,7 +89,11 @@ const maybeWrapNodesInFrameClipPath = (
   frameRendering: AppState["frameRendering"],
   elementsMap: RenderableElementsMap,
 ) => {
-  if (!frameRendering.enabled || !frameRendering.clip) {
+  if (
+    !frameRendering.enabled ||
+    !frameRendering.clip ||
+    !isFrameClippable(element, elementsMap)
+  ) {
     return null;
   }
   const frame = getContainingFrame(element, elementsMap);
